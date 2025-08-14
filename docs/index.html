@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Shelf Locator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .search-section {
+            margin-bottom: 20px;
+        }
+        
+        #call_number {
+            width: 300px;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        #call_number:focus {
+            border-color: #007bff;
+            outline: none;
+        }
+        
+        .map-container {
+            position: relative;
+            display: inline-block;
+            border: 1px solid #ddd;
+        }
+        
+        #floormap {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .shelf-overlay {
+            position: absolute;
+            background-color: rgba(255, 192, 203, 0.4);
+            border: 2px solid rgba(255, 20, 147, 0.8);
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        
+        .file-upload {
+            margin-bottom: 15px;
+        }
+        
+        .file-upload input {
+            margin-right: 10px;
+        }
+        
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .match-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Library Shelf Locator</h1>
+        
+        <div class="file-upload" style="display: none">
+            <label for="csvFile">Upload CSV file:</label>
+            <input type="file" id="csvFile" accept=".csv" />
+            <button onclick="loadSampleData()">Use Sample Data</button>
+        </div>
+        
+		<div style="display: none" id="hide_status">
+        <div id="status" class="status" style="display: none;"></div>
+		</div>
+        
+        <div class="search-section">
+			<div>
+				Add Prefix:
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="" id="none" checked />
+					<label for="none">🚫Use as typed</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="FICTION " id="fiction" />
+					<label for="fiction">💭Fiction</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="MYSTERY " id="Mystery" />
+					<label for="Mystery">❓Mystery</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="LGPRINT " id="LgPrint" />
+					<label for="LgPrint">🅰️ LgPrint</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="ROMANCE " id="Romance" />
+					<label for="Romance">💜 Romance</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="WESTERN " id="Western" />
+					<label for="Western">🤠 Western</label>
+				</div>
+				<div style="display: inline">
+					<input type="radio" name="prefix" value="IOWA LOCAL " id="iowa_local" />
+					<label for="iowa_local">📍Iowa Local</label>
+				</div>
+				<div style="display: none">
+					<input type="radio" name="prefix" value="MAGAZINE " id="Magazine" />
+					<label for="Magazine">Magazine</label>
+				</div>
+				<div style="display: none">
+					<input type="radio" name="prefix" value="YA " id="YA" />
+					<label for="YA">YA</label>
+				</div>
+				<div style="display: none">
+					<input type="radio" name="prefix" value="YA GNOVEL " id="YA_gnovel" />
+					<label for="YA_gnovel">YA GNOVEL</label>
+				</div>
+			</div>
+			<br/>
+				
+			<div>
+				<label for="call_number">Call Number:</label>
+				<input type="text" id="call_number" placeholder="Enter call number (e.g., FICTION LO)" />
+				<div id="matchInfo" class="match-info"></div>
+			</div>
+        </div>
+        
+        <div style="margin-top: 15px;">
+            <label for="mapFile">Upload floor map image:</label>
+            <input type="file" id="mapFile" accept="image/*" />
+        </div>
+        <div class="map-container">
+            <img id="floormap" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='400' viewBox='0 0 800 400'%3E%3Crect width='800' height='400' fill='%23f0f0f0'/%3E%3Ctext x='400' y='200' text-anchor='middle' font-family='Arial' font-size='20' fill='%23666'%3EFloor Map Placeholder%3C/text%3E%3Ctext x='400' y='230' text-anchor='middle' font-family='Arial' font-size='14' fill='%23999'%3EUpload your floor map image%3C/text%3E%3C/svg%3E" alt="Floor Map" />
+        </div>
+        
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script>
+        let shelfData = [];
+        let currentOverlays = new Map(); // Track current overlays by shelf number
+        let lastSearchTerm = '';
+        
+        // Initialize event listeners
+        document.getElementById('csvFile').addEventListener('change', handleCSVUpload);
+        document.getElementById('mapFile').addEventListener('change', handleMapUpload);
+        document.getElementById('call_number').addEventListener('input', handleSearch);
+        document.querySelectorAll('input[name="prefix"]').forEach(radio => radio.addEventListener('change', handleSearch));
+        
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${isError ? 'error' : 'success'}`;
+            status.style.display = 'block';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+        
+        function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                dynamicTyping: true,
+                complete: function(results) {
+                    if (results.errors.length > 0) {
+                        showStatus('Error parsing CSV: ' + results.errors[0].message, true);
+                        return;
+                    }
+                    
+                    // Clean headers (remove whitespace)
+                    const cleanedData = results.data.map(row => {
+                        const cleanRow = {};
+                        Object.keys(row).forEach(key => {
+                            const cleanKey = key.trim();
+                            cleanRow[cleanKey] = row[key];
+                        });
+                        return cleanRow;
+                    });
+                    
+                    shelfData = cleanedData;
+                    showStatus(`Loaded ${shelfData.length} shelf records`);
+                    handleSearch(); // Refresh search with current input
+                },
+                error: function(error) {
+                    showStatus('Error reading CSV file: ' + error.message, true);
+                }
+            });
+        }
+        
+        function handleMapUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = document.getElementById('floormap');
+                img.src = e.target.result;
+                showStatus('Floor map uploaded successfully');
+                
+                // Clear existing overlays since image dimensions may have changed
+                clearAllOverlays();
+                handleSearch(); // Redraw overlays for current search
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function loadSampleData() {
+            shelfData = [
+                {
+                    'Shelf Number': 3,
+                    'Corner1 x': 690,
+                    'Corner1 y': 126,
+                    'Corner2 x': 699,
+                    'Corner2 y': 310,
+                    'First present': 'FICTION L',
+                    'Last present': 'FICTION LO'
+                },
+                {
+                    'Shelf Number': 4,
+                    'Corner1 x': 680,
+                    'Corner1 y': 126,
+                    'Corner2 x': 689,
+                    'Corner2 y': 310,
+                    'First present': 'FICTION LO',
+                    'Last present': 'FICTION M'
+                },
+                {
+                    'Shelf Number': 5,
+                    'Corner1 x': 670,
+                    'Corner1 y': 126,
+                    'Corner2 x': 679,
+                    'Corner2 y': 310,
+                    'First present': 'FICTION M',
+                    'Last present': 'FICTION P'
+                }
+            ];
+            showStatus(`Loaded ${shelfData.length} sample shelf records`);
+            handleSearch();
+        }
+        
+        function handleSearch(event) {
+            const searchTerm1 = document.getElementById('call_number').value.trim().toUpperCase();
+			const selectedPrefix = document.querySelector('input[name="prefix"]:checked').value;
+			const searchTerm = selectedPrefix + searchTerm1
+            
+            // Don't process if search term hasn't changed (avoids unnecessary work)
+            if (searchTerm === lastSearchTerm) return;
+            lastSearchTerm = searchTerm;
+            
+            if (searchTerm === '') {
+                clearAllOverlays();
+                updateMatchInfo(searchTerm, []);
+                return;
+            }
+            
+            // Find matching shelves
+            const matchingShelves = findMatchingShelves(searchTerm);
+            
+            // Get currently displayed shelf numbers
+            const currentShelfNumbers = new Set(currentOverlays.keys());
+            const newShelfNumbers = new Set(matchingShelves.map(shelf => shelf['Shelf Number']));
+            
+            // Remove overlays that shouldn't be displayed anymore
+            for (const shelfNum of currentShelfNumbers) {
+                if (!newShelfNumbers.has(shelfNum)) {
+                    removeOverlay(shelfNum);
+                }
+            }
+            
+            // Add new overlays
+            for (const shelf of matchingShelves) {
+                const shelfNum = shelf['Shelf Number'];
+                if (!currentOverlays.has(shelfNum)) {
+                    addOverlay(shelf);
+                }
+            }
+            
+            updateMatchInfo(searchTerm, matchingShelves);
+        }
+
+        function getNextPrefix(str) {
+            return str + 'ZZZZZZZ'
+            // if (!str) return 'A';
+
+            // let lastChar = str.slice(-1);
+            // let base = str.slice(0, -1);
+
+            // // Increment the last character if it's A–Y or a–y
+            // if (/[A-Ya-y]/.test(lastChar)) {
+            //     return base + String.fromCharCode(lastChar.charCodeAt(0) + 1);
+            // }
+
+            // // If last char is Z or z, add an 'A' at the end
+            // if (lastChar.toUpperCase() === 'Z') {
+            //     return str + 'A';
+            // }
+
+            // // If it's not a letter (like space), just increment the code
+            // return base + String.fromCharCode(lastChar.charCodeAt(0) + 1);
+        }
+        
+        function findMatchingShelves(searchTerm) {
+            return shelfData.filter(shelf => {
+                const firstPresent = (shelf['First present'] || '').toString().toUpperCase();
+                const lastPresent = (shelf['Last present'] || '').toString().toUpperCase();
+                
+                const searchCouldMatch = searchTerm <= lastPresent + 'ZZZZZ' && 
+                                        (searchTerm >= firstPresent || firstPresent.startsWith(searchTerm));
+                return searchCouldMatch;
+                // Check if search term falls within the range
+                return searchTerm >= firstPresent && searchTerm < getNextPrefix(lastPresent);
+            });
+        }
+        
+        function addOverlay(shelf) {
+            const shelfNum = shelf['Shelf Number'];
+            const mapContainer = document.querySelector('.map-container');
+            const img = document.getElementById('floormap');
+            
+            // Get image dimensions and position
+            const imgRect = img.getBoundingClientRect();
+            const containerRect = mapContainer.getBoundingClientRect();
+            
+            // Calculate scale factors
+            const scaleX = imgRect.width / img.naturalWidth;
+            const scaleY = imgRect.height / img.naturalHeight;
+            
+            const overlay = document.createElement('div');
+            overlay.className = 'shelf-overlay';
+            overlay.dataset.shelfNumber = shelfNum;
+            
+            // Position and size the overlay
+            const x1 = shelf['Corner1 x'] * scaleX;
+            const y1 = shelf['Corner1 y'] * scaleY;
+            const x2 = shelf['Corner2 x'] * scaleX;
+            const y2 = shelf['Corner2 y'] * scaleY;
+            
+            overlay.style.left = Math.min(x1, x2) + 'px';
+            overlay.style.top = Math.min(y1, y2) + 'px';
+            overlay.style.width = Math.abs(x2 - x1) + 'px';
+            overlay.style.height = Math.abs(y2 - y1) + 'px';
+            
+            mapContainer.appendChild(overlay);
+            currentOverlays.set(shelfNum, overlay);
+        }
+        
+        function removeOverlay(shelfNumber) {
+            const overlay = currentOverlays.get(shelfNumber);
+            if (overlay) {
+                overlay.remove();
+                currentOverlays.delete(shelfNumber);
+            }
+        }
+        
+        function clearAllOverlays() {
+            currentOverlays.forEach(overlay => overlay.remove());
+            currentOverlays.clear();
+        }
+        
+        function updateMatchInfo(searchTerm, matchingShelves) {
+            const matchInfo = document.getElementById('matchInfo');
+            if (matchingShelves.length === 0) {
+                matchInfo.textContent = "No results for '" + searchTerm + "'";
+            } else {
+                const shelfNumbers = matchingShelves.map(shelf => shelf['Shelf Number']).sort((a, b) => Number(a) - Number(b));
+                matchInfo.textContent = "'" + searchTerm + "'"
+						+ ` Found on shel${shelfNumbers.length > 1 ? 'ves' : 'f'}: ${shelfNumbers.join(', ')}`;
+            }
+        }
+		
+		// Load files automatically when page loads
+		window.addEventListener('DOMContentLoaded', function() {
+			loadCSVFile();
+		});
+
+		async function loadCSVFile() {
+			try {
+				const csvText = `Shelf Number,Corner1 x,Corner1 y,Corner2 x,Corner2 y,First present,Last present
+2,690,380,699,558,FICTION A,FICTION B
+5,680,380,689,558,FICTION B,FICTION B
+8,636,380,645,558,FICTION B,FICTION C
+11,626,380,635,558,FICTION C,FICTION C
+14,580,409,589,529,FICTION C,FICTION D
+17,570,409,579,529,FICTION D,FICTION D
+20,526,409,535,529,FICTION D,FICTION E
+23,516,409,525,529,FICTION E,FICTION F
+26,474,409,483,529,FICTION F,FICTION G
+29,464,409,473,529,FICTION G,FICTION G
+32,423,380,432,558,FICTION G,FICTION H
+35,413,380,422,558,FICTION H,FICTION I
+38,368,380,377,558,FICTION I,FICTION K
+41,358,380,367,558,FICTION K,FICTION L
+3,690,126,699,310,FICTION L,FICTION L
+4,680,126,689,310,FICTION L,FICTION M
+9,636,126,645,310,FICTION M,FICTION M
+10,626,126,635,310,FICTION M,FICTION M
+15,580,126,589,280,FICTION M,FICTION O
+16,570,126,579,280,FICTION O,FICTION P
+21,526,126,535,280,FICTION P,FICTION P
+22,516,126,525,280,FICTION P,FICTION R
+27,474,126,483,280,FICTION R,FICTION S
+28,464,126,473,280,FICTION S,FICTION S
+33,423,126,432,280,FICTION S,FICTION S
+34,413,126,422,280,FICTION S,FICTION T
+39,368,126,377,310,FICTION T,FICTION W
+40,358,126,367,310,FICTION W,FICTION Z
+43,309,664,319,721,IOWA LOCAL,IOWA LOCAL
+1,690,636,699,846,LGPRINT A,LGPRINT H
+6,680,636,689,846,LGPRINT H,LGPRINT P
+7,636,636,645,846,LGPRINT P,LGPRINT WESTA
+7,636,636,645,846,LGPRINT WESTF,LGPRINT Z
+13,580,666,589,846,LGPRINT WESTERN,LGPRINT WESTERN Z
+12,626,636,635,846,LGPRINT WESTERN A,LGPRINT WESTERN
+18,570,666,579,846,MYSTERY A,MYSTERY B
+19,526,666,535,846,MYSTERY B,MYSTERY C
+24,516,666,525,846,MYSTERY C,MYSTERY E
+25,474,666,483,846,MYSTERY E,MYSTERY H
+30,464,666,473,846,MYSTERY H,MYSTERY J
+31,423,636,432,846,MYSTERY J,MYSTERY M
+36,413,636,422,846,MYSTERY M,MYSTERY P
+37,368,636,377,846,MYSTERY P,MYSTERY S
+42,358,636,367,846,MYSTERY S,MYSTERY Z
+46,261,481,321,490,ROMANCE,ROMANCE
+47,261,437,321,446,ROMANCE,ROMANCE
+48,261,427,321,436,ROMANCE,ROMANCE
+49,261,382,321,391,ROMANCE,ROMANCE
+50,261,372,321,381,ROMANCE,ROMANCE
+45,261,491,321,500,ROMANCE A,ROMANCE
+44,309,604,319,664,WESTERN,WESTERN
+43,309,664,319,721,WESTERN A,WESTERN`;
+				
+				Papa.parse(csvText, {
+					header: true,
+					skipEmptyLines: true,
+					dynamicTyping: true,
+					complete: function(results) {
+						// Same processing as before
+						const cleanedData = results.data.map(row => {
+							const cleanRow = {};
+							Object.keys(row).forEach(key => {
+								const cleanKey = key.trim();
+								cleanRow[cleanKey] = row[key];
+							});
+							return cleanRow;
+						});
+						
+						shelfData = cleanedData;
+						showStatus(`Loaded ${shelfData.length} shelf records`);
+					}
+				});
+			} catch (error) {
+				showStatus('Error loading CSV file: ' + error.message, true);
+			}
+		}
+
+        
+        // Handle window resize to adjust overlay positions
+        window.addEventListener('resize', () => {
+            if (currentOverlays.size > 0) {
+                // Re-add all current overlays with new dimensions
+                const currentMatches = Array.from(currentOverlays.keys()).map(shelfNum => 
+                    shelfData.find(shelf => shelf['Shelf Number'] === shelfNum)
+                ).filter(Boolean);
+                
+                clearAllOverlays();
+                currentMatches.forEach(shelf => addOverlay(shelf));
+            }
+        });
+    </script>
+</body>
+</html>
